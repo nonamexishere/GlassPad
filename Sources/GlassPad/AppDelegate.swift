@@ -9,6 +9,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panel: NotesPanel!
     // Held so menuNeedsUpdate can retitle it to mirror the panel's mode.
     private var previewItem: NSMenuItem!
+    // The currently active global shortcut, loaded from UserDefaults at launch
+    // and updated whenever the user records a new one in Preferences.
+    private var shortcut = Shortcut.default
+    // Lazily created the first time Preferences is opened.
+    private var preferences: PreferencesWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The panel comes first: the View menu items target it directly.
@@ -23,7 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusMenu.delegate = self
         statusItem.menu = statusMenu
 
-        hotKey.register(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey)) { [weak self] in
+        // Register the saved combo, or the historical ⌥Space default if the user
+        // has never customised it.
+        shortcut = ShortcutStore.load()
+        hotKey.register(keyCode: shortcut.keyCode, modifiers: shortcut.carbonModifiers) { [weak self] in
             self?.panel.toggle()
         }
     }
@@ -41,10 +49,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let toggle = NSMenuItem(title: "Show / Hide Note", action: #selector(togglePanel), keyEquivalent: "")
         toggle.target = self
         statusMenu.addItem(toggle)
-        let hint = NSMenuItem(title: "⌥Space  Toggle from anywhere", action: nil, keyEquivalent: "")
+        // Mirror the currently configured shortcut rather than a hard-coded glyph.
+        let hint = NSMenuItem(title: "\(ShortcutFormatter.displayString(shortcut))  Toggle from anywhere",
+                              action: nil, keyEquivalent: "")
         hint.isEnabled = false
         statusMenu.addItem(hint)
         statusMenu.addItem(.separator())
+        let prefs = NSMenuItem(title: "Preferences…",
+                               action: #selector(showPreferences), keyEquivalent: ",")
+        prefs.target = self
+        statusMenu.addItem(prefs)
         if Bundle.main.bundleIdentifier != nil {
             let login = NSMenuItem(title: "Launch at Login",
                                    action: #selector(toggleLoginItem), keyEquivalent: "")
@@ -72,6 +86,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleLoginItem() {
         LoginItem.toggle()
         buildStatusMenu()
+    }
+
+    // Opens the Preferences window, creating it on first use. The note panel is a
+    // non-activating panel, so the app normally never becomes active and a plain
+    // orderFront would leave the recorder field unable to receive key events.
+    // Activating the app first makes this regular titled window key and lets the
+    // recorder capture chords; the panel's non-activating behavior is untouched.
+    @objc private func showPreferences() {
+        if preferences == nil {
+            let controller = PreferencesWindowController(shortcut: shortcut)
+            controller.onChange = { [weak self] newShortcut in
+                self?.applyShortcut(newShortcut)
+            }
+            preferences = controller
+        }
+        preferences?.setShortcut(shortcut)
+        NSApp.activate(ignoringOtherApps: true)
+        preferences?.showWindow(nil)
+        preferences?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    // Persists a newly chosen chord and re-registers the global hotkey so it
+    // takes effect immediately. If the OS rejects the new combo (e.g. another app
+    // holds it exclusively) the old binding is kept and we beep, mirroring the
+    // recorder's own rejection feedback.
+    private func applyShortcut(_ newShortcut: Shortcut) {
+        guard hotKey.update(keyCode: newShortcut.keyCode,
+                            modifiers: newShortcut.carbonModifiers) else {
+            NSSound.beep()
+            // Re-register the still-active old combo and revert the recorder's
+            // display to it.
+            hotKey.update(keyCode: shortcut.keyCode, modifiers: shortcut.carbonModifiers)
+            preferences?.setShortcut(shortcut)
+            return
+        }
+        shortcut = newShortcut
+        ShortcutStore.save(shortcut)
     }
 
     // An .accessory app never shows a main menu, but without one AppKit has

@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import Carbon.HIToolbox
 @testable import GlassPad
 
 final class NoteMigrationTests: XCTestCase {
@@ -64,5 +65,72 @@ final class MarkdownRenderTests: XCTestCase {
             }
         }
         XCTAssertTrue(sawBold)
+    }
+}
+
+final class ShortcutFormatterTests: XCTestCase {
+    func testCarbonModifiersFromCocoaFlags() {
+        let flags: NSEvent.ModifierFlags = [.command, .shift]
+        XCTAssertEqual(ShortcutFormatter.carbonModifiers(from: flags),
+                       UInt32(cmdKey | shiftKey))
+        XCTAssertEqual(ShortcutFormatter.carbonModifiers(from: [.option]),
+                       UInt32(optionKey))
+        XCTAssertEqual(ShortcutFormatter.carbonModifiers(from: []), 0)
+    }
+
+    func testModifierGlyphsUseMenuOrdering() {
+        // Regardless of insertion order the glyphs come out as ⌃⌥⇧⌘.
+        let mods = UInt32(cmdKey | controlKey | optionKey | shiftKey)
+        XCTAssertEqual(ShortcutFormatter.modifierString(mods), "⌃⌥⇧⌘")
+    }
+
+    func testDisplayStringForDefaultIsOptionSpace() {
+        XCTAssertEqual(ShortcutFormatter.displayString(.default), "⌥Space")
+    }
+
+    func testDisplayStringForCommandShiftC() {
+        let shortcut = Shortcut(keyCode: UInt32(kVK_ANSI_C),
+                                carbonModifiers: UInt32(cmdKey | shiftKey))
+        XCTAssertEqual(ShortcutFormatter.displayString(shortcut), "⇧⌘C")
+    }
+
+    func testUnknownKeyFallsBackToCode() {
+        XCTAssertEqual(ShortcutFormatter.keyString(9999), "Key 9999")
+    }
+
+    func testFunctionKeysAreAllowedBare() {
+        XCTAssertTrue(ShortcutFormatter.isFunctionKey(UInt32(kVK_F5)))
+        XCTAssertFalse(ShortcutFormatter.isFunctionKey(UInt32(kVK_ANSI_A)))
+        XCTAssertFalse(ShortcutFormatter.isFunctionKey(UInt32(kVK_Space)))
+    }
+}
+
+final class ShortcutStoreTests: XCTestCase {
+    private func makeDefaults() -> UserDefaults {
+        let suite = "GlassPadTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return defaults
+    }
+
+    func testLoadWithoutSavedValueReturnsDefault() {
+        XCTAssertEqual(ShortcutStore.load(makeDefaults()), .default)
+    }
+
+    func testSaveThenLoadRoundTrips() {
+        let defaults = makeDefaults()
+        let shortcut = Shortcut(keyCode: UInt32(kVK_ANSI_C),
+                                carbonModifiers: UInt32(cmdKey | shiftKey))
+        ShortcutStore.save(shortcut, to: defaults)
+        XCTAssertEqual(ShortcutStore.load(defaults), shortcut)
+    }
+
+    func testKeyCodeZeroIsHonouredNotTreatedAsAbsent() {
+        // keyCode 0 ('A') must survive a round-trip rather than reverting to the
+        // default, which integer(forKey:) would have done.
+        let defaults = makeDefaults()
+        let shortcut = Shortcut(keyCode: 0, carbonModifiers: UInt32(cmdKey))
+        ShortcutStore.save(shortcut, to: defaults)
+        XCTAssertEqual(ShortcutStore.load(defaults), shortcut)
     }
 }

@@ -2,8 +2,9 @@ import AppKit
 import Carbon.HIToolbox
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
+    private let statusMenu = NSMenu()
     private let hotKey = HotKeyManager()
     private var panel: NotesPanel!
 
@@ -16,18 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.image = NSImage(systemSymbolName: "note.text",
                                            accessibilityDescription: "GlassPad")
 
-        let menu = NSMenu()
-        let toggle = NSMenuItem(title: "Show / Hide Note", action: #selector(togglePanel), keyEquivalent: "")
-        toggle.target = self
-        menu.addItem(toggle)
-        let hint = NSMenuItem(title: "⌥Space  Toggle from anywhere", action: nil, keyEquivalent: "")
-        hint.isEnabled = false
-        menu.addItem(hint)
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit GlassPad",
-                                action: #selector(NSApplication.terminate(_:)),
-                                keyEquivalent: "q"))
-        statusItem.menu = menu
+        buildStatusMenu()
+        statusMenu.delegate = self
+        statusItem.menu = statusMenu
 
         hotKey.register(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey)) { [weak self] in
             self?.panel.toggle()
@@ -40,6 +32,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func togglePanel() {
         panel.toggle()
+    }
+
+    private func buildStatusMenu() {
+        statusMenu.removeAllItems()
+        let toggle = NSMenuItem(title: "Show / Hide Note", action: #selector(togglePanel), keyEquivalent: "")
+        toggle.target = self
+        statusMenu.addItem(toggle)
+        let hint = NSMenuItem(title: "⌥Space  Toggle from anywhere", action: nil, keyEquivalent: "")
+        hint.isEnabled = false
+        statusMenu.addItem(hint)
+        statusMenu.addItem(.separator())
+        if Bundle.main.bundleIdentifier != nil {
+            let login = NSMenuItem(title: "Launch at Login",
+                                   action: #selector(toggleLoginItem), keyEquivalent: "")
+            login.target = self
+            login.state = LoginItem.isEnabled ? .on : .off
+            statusMenu.addItem(login)
+        }
+        statusMenu.addItem(NSMenuItem(title: "Quit GlassPad",
+                                      action: #selector(NSApplication.terminate(_:)),
+                                      keyEquivalent: "q"))
+    }
+
+    // Refresh the Launch at Login checkmark each time the menu opens.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        buildStatusMenu()
+    }
+
+    @objc private func toggleLoginItem() {
+        LoginItem.toggle()
+        buildStatusMenu()
     }
 
     // An .accessory app never shows a main menu, but without one AppKit has

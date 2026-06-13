@@ -7,7 +7,15 @@ A translucent scratchpad that's always one keystroke away. Press **⌥Space** an
 - **Always on top, everywhere** — floats above all windows, follows you across Spaces, stays put when you switch apps. Drag anywhere on its background to move it, or drag an edge to resize it.
 - **One persistent note** — a single scratchpad that autosaves on every keystroke and survives restarts. No files, no documents, no save button. An empty note shows a hint, and a live word/character count sits in the bottom-right corner.
 
-## Build & run
+## Install
+
+**Download the app:** grab `GlassPad.zip` from the [Releases](https://github.com/nonamexishere/GlassPad/releases) page, unzip it, and drag **GlassPad.app** to your Applications folder.
+
+Because the app isn't notarized yet, the first launch needs a right-click: **right-click GlassPad.app → Open → Open**. After that it opens normally. No special permissions are required.
+
+Click the menu bar icon → **Launch at Login** so it starts automatically.
+
+## Build from source
 
 Requires macOS 13+ and Xcode (or the Swift toolchain).
 
@@ -34,7 +42,8 @@ No special permissions needed — unlike clipboard tools, GlassPad only listens 
 
 ## Roadmap
 
-- [ ] Proper `.app` bundle + signed releases (Homebrew cask)
+- [x] Proper `.app` bundle + downloadable release + Launch at Login
+- [ ] Signed & notarized build (Homebrew cask)
 - [ ] Configurable hotkey
 - [ ] Markdown rendering
 

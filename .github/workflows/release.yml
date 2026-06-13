@@ -1,0 +1,23 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package app bundle
+        run: ./Packaging/package.sh
+      - name: Zip
+        run: cd .build && ditto -c -k --keepParent GlassPad.app GlassPad.zip
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: .build/GlassPad.zip
+          generate_release_notes: true

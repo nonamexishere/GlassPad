@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let statusMenu = NSMenu()
     private let hotKey = HotKeyManager()
     private var panel: NotesPanel!
+    // Held so menuNeedsUpdate can retitle it to mirror the panel's mode.
+    private var previewItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The panel comes first: the View menu items target it directly.
@@ -55,9 +57,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                       keyEquivalent: "q"))
     }
 
-    // Refresh the Launch at Login checkmark each time the menu opens.
+    // Refresh dynamic menu state each time a menu opens: the Launch at Login
+    // checkmark in the status menu, and the preview toggle's title/checkmark in
+    // the View menu.
     func menuNeedsUpdate(_ menu: NSMenu) {
-        buildStatusMenu()
+        if menu === statusMenu {
+            buildStatusMenu()
+        } else if menu === previewItem?.menu {
+            previewItem.state = panel.isInPreview ? .on : .off
+            previewItem.title = panel.isInPreview ? "Edit Markdown Source" : "Toggle Preview"
+        }
     }
 
     @objc private func toggleLoginItem() {
@@ -94,13 +103,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let reset = NSMenuItem(title: "Reset Size", action: #selector(NotesPanel.resetFontSize), keyEquivalent: "0")
         reset.target = panel
         viewMenu.addItem(reset)
+        viewMenu.addItem(.separator())
+        // Markdown preview toggle. The title is refreshed in menuNeedsUpdate to
+        // reflect the panel's current preview state.
+        previewItem = NSMenuItem(title: "Toggle Preview",
+                                 action: #selector(NotesPanel.togglePreview),
+                                 keyEquivalent: "p")
+        previewItem.keyEquivalentModifierMask = [.command, .shift]
+        previewItem.target = panel
+        viewMenu.addItem(previewItem)
+
+        // Drive the preview item's title/checkmark from menuNeedsUpdate.
+        viewMenu.delegate = self
 
         let viewItem = NSMenuItem()
         viewItem.submenu = viewMenu
 
+        // Notes menu: create/delete plus Cmd+1 … Cmd+9 quick-switching. Like
+        // the View items these target the panel explicitly, since a
+        // non-activating panel never enters the responder chain.
+        let notesMenu = NSMenu(title: "Notes")
+        let new = NSMenuItem(title: "New Note", action: #selector(NotesPanel.newNote), keyEquivalent: "t")
+        new.target = panel
+        notesMenu.addItem(new)
+        let delete = NSMenuItem(title: "Delete Note", action: #selector(NotesPanel.deleteNote), keyEquivalent: "w")
+        delete.target = panel
+        notesMenu.addItem(delete)
+        notesMenu.addItem(.separator())
+        // Nine fixed slots; each carries its 1-based index in the tag so the
+        // panel knows which note to select. AppKit ignores equivalents whose
+        // target can't act, which is fine when fewer than nine notes exist.
+        for n in 1...9 {
+            let item = NSMenuItem(title: "Note \(n)",
+                                  action: #selector(NotesPanel.selectNoteFromMenu(_:)),
+                                  keyEquivalent: "\(n)")
+            item.tag = n
+            item.target = panel
+            notesMenu.addItem(item)
+        }
+
+        let notesItem = NSMenuItem()
+        notesItem.submenu = notesMenu
+
         let mainMenu = NSMenu()
         mainMenu.addItem(editItem)
         mainMenu.addItem(viewItem)
+        mainMenu.addItem(notesItem)
         NSApp.mainMenu = mainMenu
     }
 }

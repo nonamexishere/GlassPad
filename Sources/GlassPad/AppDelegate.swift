@@ -8,8 +8,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: NotesPanel!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        installMainMenu()
+        // The panel comes first: the View menu items target it directly.
         panel = NotesPanel()
+        installMainMenu()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(systemSymbolName: "note.text",
@@ -56,8 +57,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let editItem = NSMenuItem()
         editItem.submenu = editMenu
+
+        // Same trick for the font-size shortcuts, except these can't rely on
+        // the responder chain — a non-activating panel is never in it — so
+        // each item targets the panel explicitly.
+        let viewMenu = NSMenu(title: "View")
+        let bigger = NSMenuItem(title: "Bigger", action: #selector(NotesPanel.increaseFontSize), keyEquivalent: "+")
+        bigger.target = panel
+        viewMenu.addItem(bigger)
+        let smaller = NSMenuItem(title: "Smaller", action: #selector(NotesPanel.decreaseFontSize), keyEquivalent: "-")
+        smaller.target = panel
+        viewMenu.addItem(smaller)
+        let reset = NSMenuItem(title: "Reset Size", action: #selector(NotesPanel.resetFontSize), keyEquivalent: "0")
+        reset.target = panel
+        viewMenu.addItem(reset)
+
+        let viewItem = NSMenuItem()
+        viewItem.submenu = viewMenu
+
         let mainMenu = NSMenu()
         mainMenu.addItem(editItem)
+        mainMenu.addItem(viewItem)
         NSApp.mainMenu = mainMenu
     }
 }

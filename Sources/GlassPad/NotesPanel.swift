@@ -177,16 +177,18 @@ final class NotesPanel: NSPanel {
     // into note #1 on first run so nothing the user wrote is lost.
     private func loadNotes() {
         let defaults = UserDefaults.standard
-        if let stored = defaults.array(forKey: Self.notesKey) as? [String], !stored.isEmpty {
-            notes = stored
-        } else if let legacy = defaults.string(forKey: Self.legacyNoteKey) {
-            // First launch after the upgrade: adopt the old note as note #1.
-            notes = [legacy]
-        } else {
-            notes = [""]
-        }
+        notes = Self.migratedNotes(stored: defaults.array(forKey: Self.notesKey) as? [String],
+                                   legacy: defaults.string(forKey: Self.legacyNoteKey))
         let savedIndex = defaults.integer(forKey: Self.currentIndexKey)
         currentIndex = min(max(savedIndex, 0), notes.count - 1)
+    }
+
+    // Resolves the persisted notes, migrating a pre-existing single "note" value
+    // into note #1 on first run so nothing the user wrote is lost. Pure for tests.
+    static func migratedNotes(stored: [String]?, legacy: String?) -> [String] {
+        if let stored, !stored.isEmpty { return stored }
+        if let legacy { return [legacy] }
+        return [""]
     }
 
     // Cmd+1 … Cmd+9 from the main menu. The selector encodes the target index
@@ -299,23 +301,24 @@ final class NotesPanel: NSPanel {
     // translate the intents into real fonts, paragraph styles, and reinserted
     // newlines/bullet glyphs that the layout manager actually renders.
     private func renderPreview() {
-        let source = notes[currentIndex]
+        textView.textStorage?.setAttributedString(Self.renderMarkdown(notes[currentIndex], bodySize: fontSize))
+    }
+
+    // Parses Markdown and styles it for display. Pure (no UI state) so it can be
+    // unit-tested. Falls back to raw text if parsing fails so a preview is never
+    // blank.
+    static func renderMarkdown(_ source: String, bodySize: CGFloat) -> NSAttributedString {
         let options = AttributedString.MarkdownParsingOptions(
             allowsExtendedAttributes: true,
             interpretedSyntax: .full,
             failurePolicy: .returnPartiallyParsedIfPossible)
-        let attributed: NSAttributedString
-        if let parsed = try? AttributedString(markdown: source, options: options) {
-            attributed = styledPreview(from: parsed)
-        } else {
-            // If parsing fails outright, fall back to the raw text so the
-            // preview is never blank.
-            attributed = NSAttributedString(
+        guard let parsed = try? AttributedString(markdown: source, options: options) else {
+            return NSAttributedString(
                 string: source,
-                attributes: [.font: NSFont.systemFont(ofSize: fontSize),
+                attributes: [.font: NSFont.systemFont(ofSize: bodySize),
                              .foregroundColor: NSColor.labelColor])
         }
-        textView.textStorage?.setAttributedString(attributed)
+        return styledPreview(from: parsed, bodySize: bodySize)
     }
 
     // Builds a visually styled NSAttributedString from the parsed Markdown.
@@ -324,7 +327,7 @@ final class NotesPanel: NSPanel {
     // paragraph style, and (for list items) a bullet/number prefix, and apply
     // bold/italic from the inline intent. labelColor adapts to light/dark and
     // reads legibly on the translucent HUD background.
-    private func styledPreview(from source: AttributedString) -> NSAttributedString {
+    static func styledPreview(from source: AttributedString, bodySize: CGFloat) -> NSAttributedString {
         let result = NSMutableAttributedString()
         var lastBlockID: Int?
 
@@ -337,11 +340,16 @@ final class NotesPanel: NSPanel {
             let isNewBlock = blockID != lastBlockID
 
             if isNewBlock && result.length > 0 {
-                result.append(NSAttributedString(string: "\n"))
+                // Carry a font on the separator too, so line metrics stay
+                // consistent (and no run is left attribute-less).
+                result.append(NSAttributedString(
+                    string: "\n",
+                    attributes: [.font: NSFont.systemFont(ofSize: bodySize),
+                                 .foregroundColor: NSColor.labelColor]))
             }
 
             // Resolve the block-level styling (heading level, list marker).
-            var pointSize = fontSize
+            var pointSize = bodySize
             var isHeading = false
             var prefix = ""
             if let components = blockIntent?.components {
@@ -350,7 +358,7 @@ final class NotesPanel: NSPanel {
                     case .header(let level):
                         isHeading = true
                         // h1 largest, tapering toward body size.
-                        pointSize = fontSize + max(0, CGFloat(8 - (level - 1) * 2))
+                        pointSize = bodySize + max(0, CGFloat(8 - (level - 1) * 2))
                     case .listItem(let ordinal):
                         if isNewBlock {
                             // Distinguish ordered vs unordered by the enclosing list.
@@ -369,7 +377,7 @@ final class NotesPanel: NSPanel {
             if isNewBlock && !prefix.isEmpty {
                 result.append(NSAttributedString(
                     string: prefix,
-                    attributes: [.font: NSFont.systemFont(ofSize: fontSize),
+                    attributes: [.font: NSFont.systemFont(ofSize: bodySize),
                                  .foregroundColor: NSColor.labelColor]))
             }
 
@@ -400,7 +408,7 @@ final class NotesPanel: NSPanel {
         if result.length == 0 {
             return NSAttributedString(
                 string: String(source.characters),
-                attributes: [.font: NSFont.systemFont(ofSize: fontSize),
+                attributes: [.font: NSFont.systemFont(ofSize: bodySize),
                              .foregroundColor: NSColor.labelColor])
         }
         return result

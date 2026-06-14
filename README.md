@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/banner.png" alt="GlassPad" width="640"></p>
+
 # GlassPad
 
 A translucent scratchpad that's always one keystroke away. Press **⌥Space** anywhere on macOS and a frosted-glass note panel floats up — jot something down, press **Esc**, keep working.
